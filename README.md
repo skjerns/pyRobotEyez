@@ -3,7 +3,7 @@ A simple python based command line video capture script
 
 ## usage
 
-Command line Python webcam capture script
+Command line Python webcam capture script, inspired by [RobotEyez](https://batchloaf.wordpress.com/2011/11/27/ultra-simple-machine-vision-in-c-with-roboteyes/)
 
 ```
 usage: capture.py [-w WIDTH] [-h HEIGHT] [-f FILE] [--help] [--wait WAIT]
