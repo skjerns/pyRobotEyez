@@ -63,7 +63,12 @@ class App():
         
         if elapsed > self.wait:
             self.save()
-            time.sleep(2.5)
+            img = cv2.resize(self.img, (self.d_w, self.d_h), interpolation=cv2.INTER_NEAREST)
+            frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
+            self.canvas.create_image(0, 0, image = frame, anchor = tk.NW)
+            self.canvas.update_idletasks()
+            self.window.update_idletasks()
+            time.sleep(2)
             self.vid.__del__()
             self.window.destroy()
             return
@@ -81,7 +86,7 @@ class App():
             textsize = cv2.getTextSize(elapsed, font, 5, 5)[0]
             textX = (self.d_w - textsize[0]-50) // 2
             textY = (self.d_h + textsize[1]+65) // 2
-            frame=cv2.putText(frame, elapsed,(textY,textX), 
+            frame = cv2.putText(frame, elapsed,(textY,textX), 
                             font, 5,(255,255,255),5,cv2.LINE_AA)
             cv2.waitKey(1)
             self.frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(frame))
