@@ -12,7 +12,6 @@ import argparse
 from PIL import ImageTk
 import tkinter as tk
 from PIL import Image
-import stimer
 
 def center(win):
     """
@@ -63,6 +62,12 @@ class App():
         
         if elapsed > self.wait:
             self.save()
+            img = np.ones([self.d_h, self.d_w])*200
+            frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
+            self.canvas.create_image(0, 0, image = frame, anchor = tk.NW)
+            self.canvas.update_idletasks()
+            self.window.update_idletasks()
+            time.sleep(0.04)
             img = cv2.resize(self.img, (self.d_w, self.d_h), interpolation=cv2.INTER_NEAREST)
             frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
             self.canvas.create_image(0, 0, image = frame, anchor = tk.NW)
@@ -75,9 +80,7 @@ class App():
         elapsed = str(int(self.wait - elapsed))
         
         font = cv2.FONT_HERSHEY_SIMPLEX
-        stimer.toggle(1)
         ret, img = self.vid.get_frame()
-        stimer.toggle(1)
         img = np.array(img)
         if not self.no_flip: img = np.fliplr(img)
         self.img = img
