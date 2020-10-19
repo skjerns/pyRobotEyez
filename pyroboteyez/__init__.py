@@ -13,6 +13,7 @@ from PIL import ImageTk
 import tkinter as tk
 from PIL import Image
 
+#%%
 def center(win):
     """
     centers a tkinter window
@@ -31,71 +32,114 @@ def center(win):
     win.deiconify()
 
 
-
 class App():
     def __init__(self, window_title, video_source=0, no_flip=False,
-                 focus=0, width=800, height=600, wait=5, file='capture.jpg'):
-        self.wait=wait
-        self.file=file
-        self.height=height
-        self.width=width
-        self.focus=focus
+                 focus=0, width=800, height=600, wait=3, file='capture.jpg',
+                 flash='auto'):
+        self.wait = wait
+        self.file = file
+        self.height = height
+        self.width = width
+        self.focus = focus
+        self.flash = flash
+        self.no_flip = no_flip
+        self.video_source = video_source
+        self.flash_screen = None
+
         self.window = tk.Tk()
         self.window.title(window_title)
-        self.video_source = video_source
-        self.no_flip = no_flip
         self.d_w = 640
         self.d_h = int(height*(self.d_w/width))
-        self.vid = Capture(self.video_source, focus=focus, width=width,
-                           height=height)
+        self.vid = CaptureCamera(self.video_source, focus=focus, width=width,
+                                 height=height)
         self.canvas = tk.Canvas(self.window, width = self.d_w, height = self.d_h)
         self.canvas.pack()
+        self.last = time.time()
         self.start = time.time()
         self.update()
         center(self.window)
         self.window.lift()
         self.window.attributes("-topmost", True)
         self.window.mainloop()
-        
-    def update(self):
-        elapsed = time.time() - self.start
-        
-        if elapsed > self.wait:
-            self.save()
-            img = np.ones([self.d_h, self.d_w])*200
-            frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
-            self.canvas.create_image(0, 0, image = frame, anchor = tk.NW)
-            self.canvas.update_idletasks()
-            self.window.update_idletasks()
-            time.sleep(0.04)
-            img = cv2.resize(self.img, (self.d_w, self.d_h), interpolation=cv2.INTER_NEAREST)
-            frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
-            self.canvas.create_image(0, 0, image = frame, anchor = tk.NW)
-            self.canvas.update_idletasks()
-            self.window.update_idletasks()
-            time.sleep(2)
-            self.vid.__del__()
-            self.window.destroy()
+
+
+    def flash_if_needed(self, timeout=1000):
+        """
+        shows a maximized white window in the background that dissappears
+        after n seconds
+        """
+        if self.flash_screen is not None:
+            return # this means flash window is already opened
+        if self.flash=='auto':
+            if np.median(self.img)>90:
+                self.flash_screen = 'too bright'
+                return
+        elif self.flash==False:
             return
+        self.flash_screen = tk.Tk()
+        self.flash_screen["bg"] = "#ffe2a1"
+        self.flash_screen.deiconify()
+        self.flash_screen.state('zoomed')
+        self.flash_screen.lift()
+        self.flash_screen.update_idletasks()
+        self.flash_screen.after(750, self.flash_screen.destroy)
+
+
+    def capture(self):
+        self.save()
+        img = np.ones([self.d_h, self.d_w])*200
+        flash_frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
+        self.canvas.create_image(0, 0, image = flash_frame, anchor = tk.NW)
+        self.canvas.update_idletasks()
+        self.window.update_idletasks()
+        time.sleep(0.04)
+        img = cv2.resize(self.img, (self.d_w, self.d_h), interpolation=cv2.INTER_NEAREST)
+        frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
+        self.canvas.create_image(0, 0, image = frame, anchor = tk.NW)
+        self.canvas.update_idletasks()
+        self.window.update_idletasks()
+        time.sleep(2)
+        self.vid.__del__()
+        self.window.destroy()
+        return
+
+    def update(self):
+
+        elapsed = time.time() - self.start
+        self.last = time.time()
+
+        # 500ms before taking a picture, we flash
+        if elapsed > self.wait-0.75 and self.flash_screen is None:
+            self.flash_if_needed()
+
+        if elapsed > self.wait:
+            self.capture()
+            return
+
         elapsed = str(int(self.wait - elapsed))
-        
+
         font = cv2.FONT_HERSHEY_SIMPLEX
         ret, img = self.vid.get_frame()
         img = np.array(img)
         if not self.no_flip: img = np.fliplr(img)
         self.img = img
         if ret:
-            frame = cv2.resize(img, (self.d_w, self.d_h), interpolation=cv2.INTER_NEAREST)
+            frame = cv2.resize(img, (self.d_w, self.d_h),
+                               interpolation = cv2.INTER_NEAREST)
             textsize = cv2.getTextSize(elapsed, font, 5, 5)[0]
             textX = (self.d_w - textsize[0]-50) // 2
             textY = (self.d_h + textsize[1]+65) // 2
             frame = cv2.putText(frame, elapsed,(textY,textX), 
-                            font, 5,(255,255,255),5,cv2.LINE_AA)
+                            font, 5,(255,255,255), 5, cv2.LINE_AA)
             cv2.waitKey(1)
             self.frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(frame))
             self.canvas.create_image(0, 0, image = self.frame, anchor = tk.NW)
 
-        self.window.after(15, self.update)
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        print(np.median(gray), gray.mean())
+
+        self.window.after(30, self.update)
 
     def save(self):
         img = self.img[:,::-1]
@@ -105,15 +149,17 @@ class App():
 
 
 
-class Capture():
+class CaptureCamera():
     def __init__(self, video_source=0, focus=5, width=800, height=600):
-        self.vid = cv2.VideoCapture(video_source, cv2.CAP_DSHOW)
+
+        self.vid = cv2.VideoCapture(video_source, cv2.CAP_DSHOW ,)
         self.vid.set(cv2.CAP_PROP_AUTOFOCUS, focus<0)
         if focus>=0:
             self.vid.set(cv2.CAP_PROP_FOCUS, focus)
+
         self.vid.set(cv2.CAP_PROP_FRAME_WIDTH,width)
         self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT,height)
-        
+
         if not self.vid.isOpened():
            raise ValueError("Unable to open video source", video_source)
         self.width = self.vid.get(cv2.CAP_PROP_FRAME_WIDTH)
@@ -129,7 +175,7 @@ class Capture():
                 return (ret, None)
         else:
             return (ret, None)
-        
+
 
     def __del__(self):
         if self.vid.isOpened():
