@@ -12,6 +12,8 @@ import argparse
 from PIL import ImageTk
 import tkinter as tk
 from PIL import Image
+from tqdm import tqdm
+from threading import Thread
 
 #%%
 def center(win):
@@ -36,6 +38,7 @@ class App():
     def __init__(self, window_title, video_source=0, no_flip=False,
                  focus=0, width=800, height=600, wait=3, file='capture.jpg',
                  flash='auto'):
+        self.tqdm_loop = tqdm(unit=' fp')
         self.wait = wait
         self.file = file
         self.height = height
@@ -45,12 +48,13 @@ class App():
         self.no_flip = no_flip
         self.video_source = video_source
         self.flash_screen = None
+        self.flash_len = 1500
 
         self.window = tk.Tk()
         self.window.title(window_title)
         self.d_w = 640
         self.d_h = int(height*(self.d_w/width))
-        self.vid = CaptureCamera(self.video_source, focus=focus, width=width,
+        self.camera = CaptureCamera(self.video_source, focus=focus, width=width,
                                  height=height)
         self.canvas = tk.Canvas(self.window, width = self.d_w, height = self.d_h)
         self.canvas.pack()
@@ -76,19 +80,26 @@ class App():
                 return
         elif self.flash==False:
             return
+
+        def destroy():
+            self.flash_screen.destroy()
+            self.flash_screen.update_ideltasks()
         self.flash_screen = tk.Tk()
         self.flash_screen["bg"] = "#ffe2a1"
         self.flash_screen.deiconify()
         self.flash_screen.state('zoomed')
         self.flash_screen.lift()
         self.flash_screen.update_idletasks()
-        self.flash_screen.after(750, self.flash_screen.destroy)
 
 
     def capture(self):
         self.save()
         img = np.ones([self.d_h, self.d_w])*200
         flash_frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
+        if not (self.flash_screen is None) and \
+           not isinstance(self.flash_screen, str):
+            self.flash_screen.destroy()
+
         self.canvas.create_image(0, 0, image = flash_frame, anchor = tk.NW)
         self.canvas.update_idletasks()
         self.window.update_idletasks()
@@ -98,19 +109,21 @@ class App():
         self.canvas.create_image(0, 0, image = frame, anchor = tk.NW)
         self.canvas.update_idletasks()
         self.window.update_idletasks()
-        time.sleep(2)
-        self.vid.__del__()
+
+        time.sleep(1.5)
+        self.camera.__del__()
         self.window.destroy()
         return
 
     def update(self):
 
         elapsed = time.time() - self.start
-        self.last = time.time()
+        self.tqdm_loop.update()
 
         # 500ms before taking a picture, we flash
-        if elapsed > self.wait-0.75 and self.flash_screen is None:
-            self.flash_if_needed()
+        if (elapsed > self.wait-self.flash_len/1000) and \
+            self.flash_screen is None:
+                self.flash_if_needed()
 
         if elapsed > self.wait:
             self.capture()
@@ -119,11 +132,11 @@ class App():
         elapsed = str(int(self.wait - elapsed))
 
         font = cv2.FONT_HERSHEY_SIMPLEX
-        ret, img = self.vid.get_frame()
+        success, img = self.camera.get_frame()
         img = np.array(img)
         if not self.no_flip: img = np.fliplr(img)
         self.img = img
-        if ret:
+        if success:
             frame = cv2.resize(img, (self.d_w, self.d_h),
                                interpolation = cv2.INTER_NEAREST)
             textsize = cv2.getTextSize(elapsed, font, 5, 5)[0]
@@ -134,10 +147,6 @@ class App():
             cv2.waitKey(1)
             self.frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(frame))
             self.canvas.create_image(0, 0, image = self.frame, anchor = tk.NW)
-
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        print(np.median(gray), gray.mean())
 
         self.window.after(30, self.update)
 
@@ -150,36 +159,53 @@ class App():
 
 
 class CaptureCamera():
+
     def __init__(self, video_source=0, focus=5, width=800, height=600):
-
-        self.vid = cv2.VideoCapture(video_source, cv2.CAP_DSHOW ,)
-        self.vid.set(cv2.CAP_PROP_AUTOFOCUS, focus<0)
+        self.stream = cv2.VideoCapture(video_source, cv2.CAP_DSHOW,)
+        self.stream.set(cv2.CAP_PROP_AUTOFOCUS, focus<0)
         if focus>=0:
-            self.vid.set(cv2.CAP_PROP_FOCUS, focus)
+            self.stream.set(cv2.CAP_PROP_FOCUS, focus)
 
-        self.vid.set(cv2.CAP_PROP_FRAME_WIDTH,width)
-        self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT,height)
+        self.stream.set(cv2.CAP_PROP_FRAME_WIDTH,width)
+        self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT,height)
 
-        if not self.vid.isOpened():
+        if not self.stream.isOpened():
            raise ValueError("Unable to open video source", video_source)
-        self.width = self.vid.get(cv2.CAP_PROP_FRAME_WIDTH)
-        self.height = self.vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
-        
+        self.width = self.stream.get(cv2.CAP_PROP_FRAME_WIDTH)
+        self.height = self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        self.read()
+        self.stopped = False
+        self.start()
 
     def get_frame(self):
-        if self.vid.isOpened():
-            ret, frame = self.vid.read()
-            if ret:
-                return (ret, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            else:
-                return (ret, None)
-        else:
-            return (ret, None)
+        return self.success, self.frame
 
+    def start(self):
+        # start the thread to read frames from the video stream
+        Thread(target=self.update, args=()).start()
+        return self
+
+    def read(self):
+        success, frame = self.stream.read()
+        self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        self.success = success
+
+    def update(self):
+        # keep looping infinitely until the thread is stopped
+        while True:
+            # if the thread indicator variable is set, stop the thread
+            if self.stopped:
+                return
+            # otherwise, read the next frame from the stream
+            self.read()
+
+    def stop(self):
+        # indicate that the thread should be stopped
+        self.stopped = True
 
     def __del__(self):
-        if self.vid.isOpened():
-            self.vid.release()
+        if self.stream.isOpened():
+            self.stream.release()
             
             
             
