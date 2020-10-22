@@ -89,6 +89,8 @@ class App():
         self.flash_screen.deiconify()
         self.flash_screen.state('zoomed')
         self.flash_screen.lift()
+        self.flash_screen.attributes('-topmost', True)
+        self.flash_screen.attributes('-topmost', False)
         self.flash_screen.update_idletasks()
 
 
