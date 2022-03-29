@@ -7,5 +7,6 @@ setup(name='pyRobotEyez',
       author='skjerns',
       author_email='nomail',
       license='GNU 2.0',
+      requires=['monitorcontrol'],
       packages=['pyroboteyez'],
       zip_safe=False)

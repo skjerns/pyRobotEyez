@@ -9,11 +9,17 @@ import time
 import PIL
 import cv2
 import argparse
+import pandas as pd
 from PIL import ImageTk
 import tkinter as tk
 from PIL import Image
 from tqdm import tqdm
 from threading import Thread
+import pprint
+from collections import OrderedDict
+import time
+import monitorcontrol
+from contextlib import contextmanager
 
 #%%
 def center(win):
@@ -32,6 +38,52 @@ def center(win):
     y = win.winfo_screenheight() // 2 - win_height // 2
     win.geometry('{}x{}+{}+{}'.format(width, height, x, y))
     win.deiconify()
+
+@contextmanager
+def max_brightness(*args, **kwds):
+    try:
+        curr_brightness = {}
+        for monitor in monitorcontrol.get_monitors():
+            with monitor:
+                source = monitor.get_input_source()
+                curr_brightness[source] = monitor.get_luminance()
+                try:
+                    monitor.set_luminance(100)
+                except ValueError:
+                    pass
+        yield
+    finally:
+        for monitor in monitorcontrol.get_monitors():
+            with monitor:
+                source = monitor.get_input_source()
+                prev_brightness = curr_brightness.get(source, 0)
+                try:
+                    monitor.set_luminance(prev_brightness)
+                except ValueError:
+                    pass
+
+def print_supported_resolutions():
+    url = "https://en.wikipedia.org/wiki/List_of_common_resolutions"
+    print('loading list of resolutions')
+    table = pd.read_html(url)[0]
+    table.columns = table.columns.droplevel()
+    table = table.sort_values('W')
+    
+    cap = cv2.VideoCapture(0)
+    resolutions = {}
+    loop = tqdm(total=len(table[["W", "H"]]))
+    for index, row in table[["W", "H"]].iterrows():
+        w, h = row
+        loop.set_description(f'checking {row["W"]}x{row["H"]}')
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, row["W"])
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, row["H"])
+        width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        resolutions[str(int(width))+"x"+str(int(height))] = "OK"
+        loop.update()
+    
+    pprint.pprint(resolutions, sort_dicts=False)
+    return resolutions
 
 
 class App():
@@ -84,14 +136,15 @@ class App():
         def destroy():
             self.flash_screen.destroy()
             self.flash_screen.update_ideltasks()
-        self.flash_screen = tk.Tk()
-        self.flash_screen["bg"] = "#ffe2a1"
-        self.flash_screen.deiconify()
-        self.flash_screen.state('zoomed')
-        self.flash_screen.lift()
-        self.flash_screen.attributes('-topmost', True)
-        self.flash_screen.attributes('-topmost', False)
-        self.flash_screen.update_idletasks()
+        with max_brightness():
+            self.flash_screen = tk.Tk()
+            self.flash_screen["bg"] = "#ffe2a1"
+            self.flash_screen.deiconify()
+            self.flash_screen.state('zoomed')
+            self.flash_screen.lift()
+            self.flash_screen.attributes('-topmost', True)
+            self.flash_screen.attributes('-topmost', False)
+            self.flash_screen.update_idletasks()
 
 
     def capture(self):
@@ -164,7 +217,7 @@ class CaptureCamera():
 
     def __init__(self, video_source=0, focus=5, width=800, height=600):
         self.stream = cv2.VideoCapture(video_source, cv2.CAP_DSHOW,)
-        self.stream.set(cv2.CAP_PROP_AUTOFOCUS, focus<0)
+        self.stream.set(cv2.CAP_PROP_AUTOFOCUS, float(focus<0))
         if focus>=0:
             self.stream.set(cv2.CAP_PROP_FOCUS, focus)
 
@@ -214,8 +267,8 @@ class CaptureCamera():
 if __name__=='__main__':           
     
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('-w',"--width", help="width of the image", type=int, default=1920)
-    parser.add_argument('-h',"--height", help="height of the image", type=int, default=1080)
+    parser.add_argument('-w',"--width", help="width of the image", type=int, default=4096)
+    parser.add_argument('-h',"--height", help="height of the image", type=int, default=2160)
     parser.add_argument('-f',"--file", help="height of the image", type=str, default='capture.jpg')
     parser.add_argument('--help', action='help', help='show this help message and exit')
     parser.add_argument('--wait', help='how many seconds to wait', default=5, type=int)
