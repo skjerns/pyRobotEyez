@@ -38,29 +38,36 @@ def center(win):
     y = win.winfo_screenheight() // 2 - win_height // 2
     win.geometry('{}x{}+{}+{}'.format(width, height, x, y))
     win.deiconify()
+    
 
-@contextmanager
-def max_brightness(*args, **kwds):
-    try:
-        curr_brightness = {}
+
+class Brightness():
+    def __init__(self):
+        self.curr_brightness = {}
         for monitor in monitorcontrol.get_monitors():
             with monitor:
                 source = monitor.get_input_source()
-                curr_brightness[source] = monitor.get_luminance()
+                self.curr_brightness[source] = monitor.get_luminance()
+                
+                
+    def max(self):
+        for monitor in monitorcontrol.get_monitors():
+            with monitor:
                 try:
                     monitor.set_luminance(100)
                 except ValueError:
                     pass
-        yield
-    finally:
+    def reset(self):
         for monitor in monitorcontrol.get_monitors():
             with monitor:
                 source = monitor.get_input_source()
-                prev_brightness = curr_brightness.get(source, 0)
+                prev_brightness = self.curr_brightness.get(source, 0)
                 try:
                     monitor.set_luminance(prev_brightness)
                 except ValueError:
                     pass
+
+
 
 def print_supported_resolutions():
     url = "https://en.wikipedia.org/wiki/List_of_common_resolutions"
@@ -100,7 +107,7 @@ class App():
         self.no_flip = no_flip
         self.video_source = video_source
         self.flash_screen = None
-        self.flash_len = 1500
+        self.flash_len = 2000
 
         self.window = tk.Tk()
         self.window.title(window_title)
@@ -116,6 +123,7 @@ class App():
         center(self.window)
         self.window.lift()
         self.window.attributes("-topmost", True)
+        self.brightness = Brightness()
         self.window.mainloop()
 
 
@@ -136,21 +144,24 @@ class App():
         def destroy():
             self.flash_screen.destroy()
             self.flash_screen.update_ideltasks()
-        with max_brightness():
-            self.flash_screen = tk.Tk()
-            self.flash_screen["bg"] = "#ffe2a1"
-            self.flash_screen.deiconify()
-            self.flash_screen.state('zoomed')
-            self.flash_screen.lift()
-            self.flash_screen.attributes('-topmost', True)
-            self.flash_screen.attributes('-topmost', False)
-            self.flash_screen.update_idletasks()
+            self.brightness.reset()
+
+        self.brightness.max()
+        self.flash_screen = tk.Tk()
+        self.flash_screen["bg"] = "#ffe2a1"
+        self.flash_screen.deiconify()
+        self.flash_screen.state('zoomed')
+        self.flash_screen.lift()
+        self.flash_screen.attributes('-topmost', True)
+        self.flash_screen.attributes('-topmost', False)
+        self.flash_screen.update_idletasks()
 
 
     def capture(self):
         self.save()
         img = np.ones([self.d_h, self.d_w])*200
         flash_frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
+        
         if not (self.flash_screen is None) and \
            not isinstance(self.flash_screen, str):
             self.flash_screen.destroy()
@@ -168,6 +179,7 @@ class App():
         time.sleep(1.5)
         self.camera.__del__()
         self.window.destroy()
+        self.brightness.reset()
         return
 
     def update(self):
@@ -267,8 +279,8 @@ class CaptureCamera():
 if __name__=='__main__':           
     
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('-w',"--width", help="width of the image", type=int, default=4096)
-    parser.add_argument('-h',"--height", help="height of the image", type=int, default=2160)
+    parser.add_argument('-w',"--width", help="width of the image", type=int, default=1920)
+    parser.add_argument('-h',"--height", help="height of the image", type=int, default=1080)
     parser.add_argument('-f',"--file", help="height of the image", type=str, default='capture.jpg')
     parser.add_argument('--help', action='help', help='show this help message and exit')
     parser.add_argument('--wait', help='how many seconds to wait', default=5, type=int)
@@ -276,6 +288,8 @@ if __name__=='__main__':
                         choices=list(range(0,260,5))+[-1], type=int, default=5)
     parser.add_argument('--no-flip', help='do not flip display image', type=bool,
                         default=False)
+    parser.add_argument('--flash', help='how many seconds to wait', default=True, type=bool)
+
     args = parser.parse_args()
     
     width = args.width
@@ -284,6 +298,7 @@ if __name__=='__main__':
     wait = args.wait
     focus = args.focus
     no_flip = args.no_flip
+    flash = args.flash
     
     self=App("Video Capture", focus=focus, width=width, height=height,
-        wait=wait, file=file, no_flip=no_flip)
+        wait=wait, file=file, no_flip=no_flip, flash=flash)

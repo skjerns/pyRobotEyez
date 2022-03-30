@@ -7,6 +7,6 @@ setup(name='pyRobotEyez',
       author='skjerns',
       author_email='nomail',
       license='GNU 2.0',
-      requires=['monitorcontrol'],
+      install_requires=['monitorcontrol', 'opencv-python'],
       packages=['pyroboteyez'],
       zip_safe=False)
