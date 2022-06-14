@@ -42,30 +42,37 @@ def center(win):
 
 
 class Brightness():
+    
     def __init__(self):
-        self.curr_brightness = {}
-        for monitor in monitorcontrol.get_monitors():
-            with monitor:
-                source = monitor.get_input_source()
-                self.curr_brightness[source] = monitor.get_luminance()
-                
+        self.monitors = monitorcontrol.get_monitors()
+        for monitor in self.monitors:
+            Thread(target=self.get_brightness, args= (monitor, )).start()
                 
     def max(self):
-        for monitor in monitorcontrol.get_monitors():
-            with monitor:
-                try:
-                    monitor.set_luminance(100)
-                except ValueError:
-                    pass
+        for monitor in self.monitors:
+            Thread(target=self.set_brightness, args=(monitor, 100)).start()
+            
+    def min(self):
+        for monitor in self.monitors:
+            Thread(target=self.set_brightness, args=(monitor, 0)).start()   
+                
+    def set_brightness(self, monitor, value):
+        """asyncable function to set brightness"""
+        with monitor:
+            monitor.set_luminance(value)
+    
+    def get_brightness(self, monitor):
+        """asyncable function to set brightness"""
+        with monitor:
+            monitor.prev_brightness = monitor.get_luminance()
+            
     def reset(self):
-        for monitor in monitorcontrol.get_monitors():
-            with monitor:
-                source = monitor.get_input_source()
-                prev_brightness = self.curr_brightness.get(source, 0)
-                try:
-                    monitor.set_luminance(prev_brightness)
-                except ValueError:
-                    pass
+        for monitor in self.monitors:
+            prev_brightness = monitor.__dict__.get('prev_brightness', 100)
+            try:
+                Thread(target=self.set_brightness, args=(monitor, prev_brightness)).start()
+            except ValueError:
+                pass
 
 
 
@@ -95,7 +102,7 @@ def print_supported_resolutions():
 
 class App():
     def __init__(self, window_title, video_source=0, no_flip=False,
-                 focus=0, width=800, height=600, wait=3, file='capture.jpg',
+                 focus=0, width=800, height=600, wait=5, file='capture.jpg',
                  flash='auto'):
         self.tqdm_loop = tqdm(unit=' fp')
         self.wait = wait
@@ -107,7 +114,7 @@ class App():
         self.no_flip = no_flip
         self.video_source = video_source
         self.flash_screen = None
-        self.flash_len = 2000
+        self.flash_len = wait*1000
 
         self.window = tk.Tk()
         self.window.title(window_title)
@@ -127,16 +134,18 @@ class App():
         self.window.mainloop()
 
 
-    def flash_if_needed(self, timeout=1000):
+    def flash_if_needed(self):
         """
         shows a maximized white window in the background that dissappears
         after n seconds
         """
         if self.flash_screen is not None:
             return # this means flash window is already opened
+        
         if self.flash=='auto':
             if np.median(self.img)>90:
                 self.flash_screen = 'too bright'
+                print('too bright')
                 return
         elif self.flash==False:
             return
@@ -148,7 +157,7 @@ class App():
 
         self.brightness.max()
         self.flash_screen = tk.Tk()
-        self.flash_screen["bg"] = "#ffe2a1"
+        self.flash_screen["bg"] = "#bdb3a0"
         self.flash_screen.deiconify()
         self.flash_screen.state('zoomed')
         self.flash_screen.lift()
@@ -160,13 +169,13 @@ class App():
     def capture(self):
         self.save()
         img = np.ones([self.d_h, self.d_w])*200
-        flash_frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
+        # flash_frame = ImageTk.PhotoImage(image = PIL.Image.fromarray(img))
         
         if not (self.flash_screen is None) and \
            not isinstance(self.flash_screen, str):
             self.flash_screen.destroy()
 
-        self.canvas.create_image(0, 0, image = flash_frame, anchor = tk.NW)
+        # self.canvas.create_image(0, 0, image = flash_frame, anchor = tk.NW)
         self.canvas.update_idletasks()
         self.window.update_idletasks()
         time.sleep(0.04)
@@ -254,8 +263,9 @@ class CaptureCamera():
 
     def read(self):
         success, frame = self.stream.read()
-        self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         self.success = success
+        if success:
+            self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     def update(self):
         # keep looping infinitely until the thread is stopped
@@ -288,7 +298,7 @@ if __name__=='__main__':
                         choices=list(range(0,260,5))+[-1], type=int, default=5)
     parser.add_argument('--no-flip', help='do not flip display image', type=bool,
                         default=False)
-    parser.add_argument('--flash', help='how many seconds to wait', default=True, type=bool)
+    parser.add_argument('--flash', help='how many seconds to wait', default='auto', type=bool)
 
     args = parser.parse_args()
     
