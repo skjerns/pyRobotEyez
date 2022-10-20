@@ -4,6 +4,7 @@ Created on Fri Dec 27 18:27:19 2019
 
 @author: Simon
 """
+import os
 import numpy as np
 import time
 import PIL
@@ -16,10 +17,7 @@ from PIL import Image
 from tqdm import tqdm
 from threading import Thread
 import pprint
-from collections import OrderedDict
-import time
 import monitorcontrol
-from contextlib import contextmanager
 
 #%%
 def center(win):
@@ -103,7 +101,7 @@ def print_supported_resolutions():
 class App():
     def __init__(self, window_title, video_source=0, no_flip=False,
                  focus=0, width=800, height=600, wait=5, file='capture.jpg',
-                 flash='auto'):
+                 flash='auto', whitebalance=-1):
         self.tqdm_loop = tqdm(unit=' fp')
         self.wait = wait
         self.file = file
@@ -115,13 +113,14 @@ class App():
         self.video_source = video_source
         self.flash_screen = None
         self.flash_len = wait*1000
+        self.whitebalance = whitebalance
 
         self.window = tk.Tk()
         self.window.title(window_title)
         self.d_w = 640
         self.d_h = int(height*(self.d_w/width))
         self.camera = CaptureCamera(self.video_source, focus=focus, width=width,
-                                 height=height)
+                                    height=height, whitebalance=whitebalance)
         self.canvas = tk.Canvas(self.window, width = self.d_w, height = self.d_h)
         self.canvas.pack()
         self.last = time.time()
@@ -236,7 +235,8 @@ class App():
 
 class CaptureCamera():
 
-    def __init__(self, video_source=0, focus=5, width=800, height=600):
+    def __init__(self, video_source=0, focus=5, width=800, height=600,
+                 whitebalance=-1):
         self.stream = cv2.VideoCapture(video_source, cv2.CAP_DSHOW,)
         self.stream.set(cv2.CAP_PROP_AUTOFOCUS, float(focus<0))
         if focus>=0:
@@ -247,11 +247,17 @@ class CaptureCamera():
 
         if not self.stream.isOpened():
            raise ValueError("Unable to open video source", video_source)
+           
+        if whitebalance>0:
+            self.stream.set(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U, whitebalance)
+           
         self.width = self.stream.get(cv2.CAP_PROP_FRAME_WIDTH)
         self.height = self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT)
         self.read()
         self.stopped = False
         self.start()
+        if os.path.isifile('./WebCameraConfig.exe'):
+            os.system('WebCameraConfig.exe')
 
     def get_frame(self):
         return self.success, self.frame
@@ -292,6 +298,8 @@ if __name__=='__main__':
     parser.add_argument('-w',"--width", help="width of the image", type=int, default=1920)
     parser.add_argument('-h',"--height", help="height of the image", type=int, default=1080)
     parser.add_argument('-f',"--file", help="height of the image", type=str, default='capture.jpg')
+    parser.add_argument('-wb',"--whitebalance", help="white balance value", type=int, default=4300)
+
     parser.add_argument('--help', action='help', help='show this help message and exit')
     parser.add_argument('--wait', help='how many seconds to wait', default=5, type=int)
     parser.add_argument('--focus', help='focus set point to set, -1 is autofocus',
@@ -299,6 +307,7 @@ if __name__=='__main__':
     parser.add_argument('--no-flip', help='do not flip display image', type=bool,
                         default=False)
     parser.add_argument('--flash', help='how many seconds to wait', default='auto', type=bool)
+
 
     args = parser.parse_args()
     
@@ -309,6 +318,8 @@ if __name__=='__main__':
     focus = args.focus
     no_flip = args.no_flip
     flash = args.flash
+    whitebalance = args.whitebalance
     
     self=App("Video Capture", focus=focus, width=width, height=height,
-        wait=wait, file=file, no_flip=no_flip, flash=flash)
+             wait=wait, file=file, no_flip=no_flip, flash=flash,
+             whitebalance=whitebalance)
