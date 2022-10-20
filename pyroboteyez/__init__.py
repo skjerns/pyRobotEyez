@@ -256,7 +256,7 @@ class CaptureCamera():
         self.read()
         self.stopped = False
         self.start()
-        if os.path.isifile('./WebCameraConfig.exe'):
+        if os.path.isfile('./WebCameraConfig.exe'):
             os.system('WebCameraConfig.exe')
 
     def get_frame(self):
