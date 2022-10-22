@@ -4,6 +4,7 @@ Created on Fri Dec 27 18:27:19 2019
 
 @author: Simon
 """
+import subprocess
 import os
 import numpy as np
 import time
@@ -37,6 +38,12 @@ def center(win):
     win.geometry('{}x{}+{}+{}'.format(width, height, x, y))
     win.deiconify()
     
+def reset_camera_settings(wait=1):
+    time.sleep(wait)
+    exe = os.path.abspath('./WebCameraConfig.exe')
+    if os.path.isfile(exe):
+        os.chdir(os.path.dirname(exe))
+        subprocess.run(exe, cwd=os.path.dirname(exe))
 
 
 class Brightness():
@@ -256,8 +263,8 @@ class CaptureCamera():
         self.read()
         self.stopped = False
         self.start()
-        if os.path.isfile('./WebCameraConfig.exe'):
-            os.system('WebCameraConfig.exe')
+        Thread(target=reset_camera_settings, args=()).start()
+
 
     def get_frame(self):
         return self.success, self.frame
